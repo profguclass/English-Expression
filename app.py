@@ -1,10 +1,16 @@
 import streamlit as st
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, timedelta
 import json
 from typing import List, Optional
 import random
+
+try:
+    from google.oauth2.service_account import Credentials as GoogleCredentials
+except ImportError:
+    GoogleCredentials = None
+
+from oauth2client.service_account import ServiceAccountCredentials
 
 SCOPE = ["https://spreadsheets.google.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
@@ -23,26 +29,33 @@ def get_gsheet():
                     import ast
                     creds_secret = ast.literal_eval(creds_secret)
                 except Exception:
-                    # Try to escape raw newlines inside JSON string values
                     def _escape_json_string_newlines(text):
                         result = []
                         in_string = False
                         escaped = False
                         for ch in text:
                             if in_string:
+                                if ch == '\\' and not escaped:
+                                    escaped = True
+                                    result.append(ch)
+                                    continue
+                                if ch == '"' and not escaped:
+                                    in_string = False
+                                    result.append(ch)
+                                    continue
                                 if ch == '\n' and not escaped:
+                                    result.append('\\n')
+                                    continue
+                                if ch == '\r' and not escaped:
                                     result.append('\\n')
                                     continue
                                 if escaped:
                                     escaped = False
-                                elif ch == '\\':
-                                    escaped = True
-                                elif ch == '"':
-                                    in_string = False
+                                result.append(ch)
                             else:
                                 if ch == '"':
                                     in_string = True
-                            result.append(ch)
+                                result.append(ch)
                         return ''.join(result)
 
                     fixed_text = _escape_json_string_newlines(creds_secret)
@@ -52,12 +65,18 @@ def get_gsheet():
                         raise ValueError("google_service_account secret is not valid JSON")
         if not isinstance(creds_secret, dict):
             raise ValueError("google_service_account must be JSON object or JSON string")
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_secret, SCOPE)
+
+        if GoogleCredentials is not None:
+            creds = GoogleCredentials.from_service_account_info(creds_secret, scopes=SCOPE)
+        else:
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_secret, SCOPE)
+
         gc = gspread.authorize(creds)
         sheet = gc.open_by_key(st.secrets["google_sheet_id"]).sheet1
         return sheet
     except Exception as e:
         st.error(f"Failed to connect to Google Sheets: {type(e).__name__}: {e}")
+        st.error("Make sure google_service_account is the full JSON object and that google_sheet_id is correct.")
         return None
 
 def init_sheet(sheet):
