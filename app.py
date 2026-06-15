@@ -14,6 +14,7 @@ def get_gsheet():
     try:
         creds_secret = st.secrets["google_service_account"]
         if isinstance(creds_secret, str):
+            creds_secret = creds_secret.strip()
             try:
                 creds_secret = json.loads(creds_secret)
             except json.JSONDecodeError:
@@ -22,7 +23,33 @@ def get_gsheet():
                     import ast
                     creds_secret = ast.literal_eval(creds_secret)
                 except Exception:
-                    raise ValueError("google_service_account secret is not valid JSON")
+                    # Try to escape raw newlines inside JSON string values
+                    def _escape_json_string_newlines(text):
+                        result = []
+                        in_string = False
+                        escaped = False
+                        for ch in text:
+                            if in_string:
+                                if ch == '\n' and not escaped:
+                                    result.append('\\n')
+                                    continue
+                                if escaped:
+                                    escaped = False
+                                elif ch == '\\':
+                                    escaped = True
+                                elif ch == '"':
+                                    in_string = False
+                            else:
+                                if ch == '"':
+                                    in_string = True
+                            result.append(ch)
+                        return ''.join(result)
+
+                    fixed_text = _escape_json_string_newlines(creds_secret)
+                    try:
+                        creds_secret = json.loads(fixed_text)
+                    except Exception:
+                        raise ValueError("google_service_account secret is not valid JSON")
         if not isinstance(creds_secret, dict):
             raise ValueError("google_service_account must be JSON object or JSON string")
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_secret, SCOPE)
