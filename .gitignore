@@ -1,0 +1,27 @@
+# Environment
+.env
+.streamlit/secrets.toml
+
+# Database
+memorizer.db
+*.db
+
+# Backup
+*_backup.py
+app_sqlite_backup.py
+
+# Virtual Environment
+.venv
+venv
+__pycache__
+*.pyc
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
