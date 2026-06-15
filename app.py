@@ -2,6 +2,7 @@ import streamlit as st
 import gspread
 from datetime import datetime, timedelta
 import json
+import re
 from typing import List, Optional
 import random
 
@@ -12,7 +13,7 @@ except ImportError:
 
 from oauth2client.service_account import ServiceAccountCredentials
 
-SCOPE = ["https://spreadsheets.google.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+SCOPE = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
 @st.cache_resource
 def get_gsheet():
@@ -30,40 +31,39 @@ def get_gsheet():
                     creds_secret = ast.literal_eval(creds_secret)
                 except Exception:
                     def _escape_json_string_newlines(text):
-                        result = []
-                        in_string = False
                         escaped = False
+                        in_string = False
+                        result = []
                         for ch in text:
-                            if in_string:
-                                if ch == '\\' and not escaped:
-                                    escaped = True
-                                    result.append(ch)
-                                    continue
-                                if ch == '"' and not escaped:
-                                    in_string = False
-                                    result.append(ch)
-                                    continue
-                                if ch in ('\n', '\r') and not escaped:
-                                    result.append('\\n')
-                                    continue
-                                if escaped:
-                                    escaped = False
+                            if ch == '"' and not escaped:
+                                in_string = not in_string
+                            if in_string and ch == '\n' and not escaped:
+                                result.append('\\n')
+                                continue
+                            if in_string and ch == '\r' and not escaped:
+                                result.append('\\n')
+                                continue
+                            if ch == '\\' and not escaped:
+                                escaped = True
                                 result.append(ch)
-                            else:
-                                if ch == '"':
-                                    in_string = True
-                                if ch == '\\' and not escaped:
-                                    escaped = True
-                                else:
-                                    escaped = False
-                                result.append(ch)
+                                continue
+                            if escaped:
+                                escaped = False
+                            result.append(ch)
                         return ''.join(result)
 
                     fixed_text = _escape_json_string_newlines(creds_secret)
                     try:
                         creds_secret = json.loads(fixed_text)
                     except Exception:
-                        raise ValueError("google_service_account secret is not valid JSON")
+                        # Fallback: explicitly escape raw newlines in private_key value
+                        match = re.search(r'("private_key"\s*:\s*")(.+?)("\s*,)', creds_secret, re.DOTALL)
+                        if match:
+                            escaped_key = match.group(2).replace('\\n', '\\\\n').replace('\n', '\\\\n').replace('\r', '\\\\n')
+                            creds_secret = creds_secret[:match.start(2)] + escaped_key + creds_secret[match.end(2):]
+                            creds_secret = json.loads(creds_secret)
+                        else:
+                            raise ValueError("google_service_account secret is not valid JSON")
         if not isinstance(creds_secret, dict):
             raise ValueError("google_service_account must be JSON object or JSON string")
 
