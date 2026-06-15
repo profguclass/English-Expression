@@ -43,10 +43,7 @@ def get_gsheet():
                                     in_string = False
                                     result.append(ch)
                                     continue
-                                if ch == '\n' and not escaped:
-                                    result.append('\\n')
-                                    continue
-                                if ch == '\r' and not escaped:
+                                if ch in ('\n', '\r') and not escaped:
                                     result.append('\\n')
                                     continue
                                 if escaped:
@@ -55,6 +52,10 @@ def get_gsheet():
                             else:
                                 if ch == '"':
                                     in_string = True
+                                if ch == '\\' and not escaped:
+                                    escaped = True
+                                else:
+                                    escaped = False
                                 result.append(ch)
                         return ''.join(result)
 
