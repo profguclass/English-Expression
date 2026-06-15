@@ -66,12 +66,15 @@ def get_gsheet():
         if not isinstance(creds_secret, dict):
             raise ValueError("google_service_account must be JSON object or JSON string")
 
-        if GoogleCredentials is not None:
-            creds = GoogleCredentials.from_service_account_info(creds_secret, scopes=SCOPE)
-        else:
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_secret, SCOPE)
+        try:
+            gc = gspread.service_account_from_dict(creds_secret, scopes=SCOPE)
+        except AttributeError:
+            if GoogleCredentials is not None:
+                creds = GoogleCredentials.from_service_account_info(creds_secret, scopes=SCOPE)
+            else:
+                creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_secret, SCOPE)
+            gc = gspread.authorize(creds)
 
-        gc = gspread.authorize(creds)
         sheet = gc.open_by_key(st.secrets["google_sheet_id"]).sheet1
         return sheet
     except Exception as e:
