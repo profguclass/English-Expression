@@ -30,6 +30,27 @@ streamlit run app.py
    - `google_service_account`: JSON 전체 내용
    - `google_sheet_id`: 시트 ID
 
+### Streamlit Secrets 예시
+
+```toml
+google_service_account = """
+{
+  "type": "service_account",
+  "project_id": "english-expression-499517",
+  "private_key_id": "...",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "client_email": "memorizer@english-expression-499517.iam.gserviceaccount.com",
+  "client_id": "...",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/memorizer%40english-expression-499517.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
+"""
+google_sheet_id = "your_sheet_id_here"
+```
+
 ## JSON 입력 형식
 
 ```json

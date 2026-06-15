@@ -12,13 +12,25 @@ SCOPE = ["https://spreadsheets.google.com/auth/spreadsheets", "https://www.googl
 def get_gsheet():
     """Connect to Google Sheet using Streamlit secrets."""
     try:
-        creds_dict = st.secrets["google_service_account"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+        creds_secret = st.secrets["google_service_account"]
+        if isinstance(creds_secret, str):
+            try:
+                creds_secret = json.loads(creds_secret)
+            except json.JSONDecodeError:
+                # Try to recover from a quoted/escaped JSON string or TOML multiline string
+                try:
+                    import ast
+                    creds_secret = ast.literal_eval(creds_secret)
+                except Exception:
+                    raise ValueError("google_service_account secret is not valid JSON")
+        if not isinstance(creds_secret, dict):
+            raise ValueError("google_service_account must be JSON object or JSON string")
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_secret, SCOPE)
         gc = gspread.authorize(creds)
         sheet = gc.open_by_key(st.secrets["google_sheet_id"]).sheet1
         return sheet
     except Exception as e:
-        st.error(f"Failed to connect to Google Sheets: {e}")
+        st.error(f"Failed to connect to Google Sheets: {type(e).__name__}: {e}")
         return None
 
 def init_sheet(sheet):
