@@ -170,7 +170,7 @@ def delete_entry(sheet, entry_id: int):
         all_entries = get_all_entries(sheet)
         for idx, entry in enumerate(all_entries, start=2):
             if int(entry.get('id', 0)) == entry_id:
-                sheet.delete_row(idx)
+                sheet.delete_rows(idx)
                 return True
         return False
     except Exception as e:
