@@ -3,7 +3,7 @@ import gspread
 from datetime import datetime, timedelta
 import json
 import re
-import html
+import uuid
 from typing import List, Optional
 import random
 
@@ -272,19 +272,27 @@ def import_json_lines(sheet, text: str):
     return added
 
 def naturalreaders_button(text: str) -> str:
-    """HTML for a button that copies `text` to the clipboard and opens NaturalReader in a new tab."""
+    """HTML for a button that copies `text` to the clipboard and opens NaturalReader in a new tab.
+
+    Uses a <script> + addEventListener instead of an onclick attribute because
+    Streamlit's st.html() sanitizer (DOMPurify) strips inline on* attributes
+    even with unsafe_allow_javascript=True; script tags are still executed.
+    """
     js_text = (text or "")
     js_text = js_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
     js_text = js_text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
-    onclick = (
-        f"navigator.clipboard.writeText(`{js_text}`);"
-        "window.open('https://www.naturalreaders.com/online/', '_blank');"
-    )
+    btn_id = f"nr-btn-{uuid.uuid4().hex}"
     return (
-        f'<button onclick="{html.escape(onclick, quote=True)}" '
+        f'<button id="{btn_id}" '
         'style="cursor:pointer;border:1px solid #ccc;border-radius:4px;'
         'background:#f0f2f6;padding:2px 8px;font-size:0.85em;white-space:nowrap;">'
         '🔊 NaturalReader</button>'
+        '<script>'
+        f'document.getElementById("{btn_id}").addEventListener("click", function() {{'
+        f'navigator.clipboard.writeText(`{js_text}`);'
+        "window.open('https://www.naturalreaders.com/online/', '_blank');"
+        '});'
+        '</script>'
     )
 
 # Streamlit UI
@@ -384,7 +392,7 @@ elif mode == "Browse & Edit":
                     if tr:
                         st.write(f" → {tr}")
                 with btn_col:
-                    st.markdown(naturalreaders_button(ex), unsafe_allow_html=True)
+                    st.html(naturalreaders_button(ex), unsafe_allow_javascript=True)
             st.write(f"Usage / Context: {r.get('context', '')}")
             st.write(f"Tags: {r.get('tags', '')}")
             st.write(f"Due: {r.get('due_at', '')}")
