@@ -3,6 +3,7 @@ import gspread
 from datetime import datetime, timedelta
 import json
 import re
+import html
 from typing import List, Optional
 import random
 
@@ -270,6 +271,22 @@ def import_json_lines(sheet, text: str):
             continue
     return added
 
+def naturalreaders_button(text: str) -> str:
+    """HTML for a button that copies `text` to the clipboard and opens NaturalReader in a new tab."""
+    js_text = (text or "")
+    js_text = js_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+    js_text = js_text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+    onclick = (
+        f"navigator.clipboard.writeText(`{js_text}`);"
+        "window.open('https://www.naturalreaders.com/online/', '_blank');"
+    )
+    return (
+        f'<button onclick="{html.escape(onclick, quote=True)}" '
+        'style="cursor:pointer;border:1px solid #ccc;border-radius:4px;'
+        'background:#f0f2f6;padding:2px 8px;font-size:0.85em;white-space:nowrap;">'
+        '🔊 NaturalReader</button>'
+    )
+
 # Streamlit UI
 st.set_page_config(page_title="Memorizer (Google Sheets)", layout="wide")
 
@@ -361,9 +378,13 @@ elif mode == "Browse & Edit":
                 exs, trs = [], []
             for i, ex in enumerate(exs):
                 tr = trs[i] if i < len(trs) else ""
-                st.write(f"Example {i+1}: {ex}")
-                if tr:
-                    st.write(f" → {tr}")
+                ex_col, btn_col = st.columns([6, 1])
+                with ex_col:
+                    st.write(f"Example {i+1}: {ex}")
+                    if tr:
+                        st.write(f" → {tr}")
+                with btn_col:
+                    st.markdown(naturalreaders_button(ex), unsafe_allow_html=True)
             st.write(f"Usage / Context: {r.get('context', '')}")
             st.write(f"Tags: {r.get('tags', '')}")
             st.write(f"Due: {r.get('due_at', '')}")
