@@ -2,6 +2,10 @@
 .env
 .streamlit/secrets.toml
 
+# Secrets / credentials
+github_pat.txt
+english-expression-499517-47631cf1bd28.json
+
 # Database
 memorizer.db
 *.db
