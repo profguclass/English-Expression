@@ -83,14 +83,20 @@ def get_gsheet():
         st.error("Make sure google_service_account is the full JSON object and that google_sheet_id is correct.")
         return None
 
+SHEET_HEADERS = ['id', 'front', 'back', 'etymology', 'synonyms', 'antonyms', 'examples',
+                 'translations', 'usage', 'pronunciation', 'context', 'tags', 'created_at',
+                 'interval', 'ease', 'repetitions', 'due_at', 'correct_count', 'wrong_count']
+
 def init_sheet(sheet):
-    """Initialize sheet with headers if empty."""
+    """Initialize sheet with headers if empty, or add any missing trailing headers."""
     try:
         if sheet.cell(1, 1).value is None:
-            headers = ['id', 'front', 'back', 'etymology', 'synonyms', 'antonyms', 'examples', 
-                      'translations', 'usage', 'pronunciation', 'context', 'tags', 'created_at',
-                      'interval', 'ease', 'repetitions', 'due_at']
-            sheet.insert_row(headers, 1)
+            sheet.insert_row(SHEET_HEADERS, 1)
+        else:
+            existing = sheet.row_values(1)
+            for i, header in enumerate(SHEET_HEADERS, start=1):
+                if i > len(existing):
+                    sheet.update_cell(1, i, header)
     except Exception as e:
         st.error(f"Failed to initialize sheet: {e}")
 
@@ -117,9 +123,9 @@ def add_entry(sheet, front: str, back: str, etymology: Optional[str] = None,
         row = [
             str(new_id), front, back,
             etymology or '', ','.join(synonyms) if synonyms else '', ','.join(antonyms) if antonyms else '',
-            json.dumps(examples or []), json.dumps(translations or []), usage or '', 
+            json.dumps(examples or []), json.dumps(translations or []), usage or '',
             json.dumps(pronunciation or {}), context or '', ','.join(tags) if tags else '',
-            now, '1', '2.5', '0', now
+            now, '1', '2.5', '0', now, '0', '0'
         ]
         sheet.append_row(row)
         return True
@@ -136,9 +142,12 @@ def update_entry_srs(sheet, entry_id: int, quality: int):
                 interval = float(entry.get('interval', 1))
                 ease = float(entry.get('ease', 2.5))
                 reps = int(entry.get('repetitions', 0))
+                correct_count = int(entry.get('correct_count', 0) or 0)
+                wrong_count = int(entry.get('wrong_count', 0) or 0)
                 now = datetime.utcnow()
-                
+
                 if quality >= 3:
+                    correct_count += 1
                     if reps == 0:
                         interval = 1
                     elif reps == 1:
@@ -150,14 +159,17 @@ def update_entry_srs(sheet, entry_id: int, quality: int):
                     if ease < 1.3:
                         ease = 1.3
                 else:
+                    wrong_count += 1
                     reps = 0
                     interval = 1
-                
+
                 due = (now + timedelta(days=round(interval))).isoformat()
-                sheet.update_cell(idx, 14, interval)  # interval
-                sheet.update_cell(idx, 15, ease)      # ease
-                sheet.update_cell(idx, 16, reps)      # repetitions
-                sheet.update_cell(idx, 17, due)       # due_at
+                sheet.update_cell(idx, 14, interval)       # interval
+                sheet.update_cell(idx, 15, ease)           # ease
+                sheet.update_cell(idx, 16, reps)           # repetitions
+                sheet.update_cell(idx, 17, due)            # due_at
+                sheet.update_cell(idx, 18, correct_count)  # correct_count
+                sheet.update_cell(idx, 19, wrong_count)    # wrong_count
                 return True
         return False
     except Exception as e:
@@ -354,49 +366,82 @@ elif mode == "Browse & Edit":
                 delete_entry(sheet, int(r['id']))
                 st.success("Deleted")
                 st.cache_resource.clear()
-                st.experimental_rerun()
+                st.rerun()
 
 elif mode == "Review (SRS)":
     st.header("Review — Multiple Choice Quiz")
-    due_items = list_entries(sheet, due_only=True)
-    if not due_items:
-        st.info("No items due. Good job!")
-    else:
-        items_list = list(due_items)
-        random.shuffle(items_list)
-        
-        for r in items_list[:5]:
-            st.markdown("---")
+
+    def _build_quiz():
+        st.session_state.quiz_round = st.session_state.get("quiz_round", 0) + 1
+        due_items = list_entries(sheet, due_only=True)
+        with_examples, without_examples = [], []
+        for r in due_items:
             try:
                 exs = json.loads(r.get('examples', '[]') or '[]')
             except Exception:
                 exs = []
-            
-            if not exs:
-                continue
-            
-            example_text = random.choice(exs)
-            meaning = r['back']
+            (with_examples if exs else without_examples).append((r, exs))
+        random.shuffle(with_examples)
+        random.shuffle(without_examples)
+        pool = (with_examples + without_examples)[:5]
+
+        quiz_items = []
+        for r, exs in pool:
             entry_id = int(r['id'])
-            
-            st.markdown(f"**Example:** _{example_text}_")
-            st.markdown(f"**Question:** What does **{r['front']}** mean?")
-            
+            meaning = r['back']
             wrong_answers = get_random_wrong_answers(sheet, entry_id, 3)
             choices = [meaning] + wrong_answers[:3]
             random.shuffle(choices)
-            
-            selected = st.radio(f"Choose (ID: {entry_id})", options=choices, key=f"choice_{entry_id}")
-            
-            if st.button(f"Submit", key=f"submit_{entry_id}"):
-                if selected == meaning:
+            quiz_items.append({
+                "entry_id": entry_id,
+                "front": r['front'],
+                "meaning": meaning,
+                "example": random.choice(exs) if exs else None,
+                "choices": choices,
+                "answered": False,
+                "correct": None,
+            })
+        st.session_state.quiz_items = quiz_items
+
+    if "quiz_items" not in st.session_state:
+        _build_quiz()
+
+    if st.button("New Quiz"):
+        _build_quiz()
+
+    quiz_items = st.session_state.quiz_items
+
+    if not quiz_items:
+        st.info("No items due. Good job!")
+    else:
+        def _on_select(item, key):
+            if not item["answered"]:
+                item["answered"] = True
+                item["correct"] = (st.session_state[key] == item["meaning"])
+                update_entry_srs(sheet, item["entry_id"], 5 if item["correct"] else 0)
+
+        for item in quiz_items:
+            st.markdown("---")
+            if item["example"]:
+                st.markdown(f"**Example:** _{item['example']}_")
+            st.markdown(f"**Question:** What does **{item['front']}** mean?")
+
+            key = f"choice_{st.session_state.quiz_round}_{item['entry_id']}"
+            st.radio(
+                f"Choose (ID: {item['entry_id']})",
+                options=item["choices"],
+                index=None,
+                key=key,
+                disabled=item["answered"],
+                on_change=_on_select,
+                args=(item, key),
+            )
+
+            if item["answered"]:
+                if item["correct"]:
                     st.success("✓ Correct!")
-                    update_entry_srs(sheet, entry_id, 5)
                 else:
-                    st.error(f"✗ Incorrect. Answer: {meaning}")
-                    update_entry_srs(sheet, entry_id, 0)
-                st.cache_resource.clear()
-                st.experimental_rerun()
+                    st.error(f"✗ Incorrect. Answer: {item['meaning']}")
 
 elif mode == "Stats":
     st.header("Statistics")
@@ -404,6 +449,41 @@ elif mode == "Stats":
     st.write(f"Total items: {len(entries)}")
     due = sum(1 for e in entries if e.get('due_at', '') <= datetime.utcnow().isoformat())
     st.write(f"Due now: {due}")
+
+    st.markdown("---")
+    st.subheader("학습 패턴")
+
+    stats_rows = []
+    for e in entries:
+        correct = int(e.get('correct_count', 0) or 0)
+        wrong = int(e.get('wrong_count', 0) or 0)
+        total = correct + wrong
+        accuracy = round(correct / total * 100, 1) if total else None
+        stats_rows.append({
+            "단어": e.get('front', ''),
+            "뜻": e.get('back', ''),
+            "맞은 횟수": correct,
+            "틀린 횟수": wrong,
+            "정답률(%)": accuracy,
+        })
+
+    reviewed = [r for r in stats_rows if r["정답률(%)"] is not None]
+    if not reviewed:
+        st.info("아직 복습 기록이 없습니다. Review 탭에서 퀴즈를 풀어보세요.")
+    else:
+        avg_acc = sum(r["정답률(%)"] for r in reviewed) / len(reviewed)
+        st.write(f"복습한 단어: {len(reviewed)} / {len(stats_rows)}  |  평균 정답률: {avg_acc:.1f}%")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**가장 약한 단어 (정답률 낮은 순)**")
+            st.table(sorted(reviewed, key=lambda r: r["정답률(%)"])[:5])
+        with col2:
+            st.markdown("**가장 잘 기억하는 단어 (정답률 높은 순)**")
+            st.table(sorted(reviewed, key=lambda r: r["정답률(%)"], reverse=True)[:5])
+
+        st.markdown("**전체 단어별 기록**")
+        st.dataframe(stats_rows, width='stretch')
 
 st.sidebar.markdown("---")
 st.sidebar.write("📊 Cloud-based: Google Sheets")
