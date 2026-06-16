@@ -345,6 +345,12 @@ elif mode == "Browse & Edit":
             st.write(r["back"])
             if r.get('etymology'):
                 st.write(f"Etymology: {r['etymology']}")
+            try:
+                pron = json.loads(r.get('pronunciation', '{}') or '{}')
+            except Exception:
+                pron = {}
+            if pron.get('us') or pron.get('uk'):
+                st.write(f"Pronunciation: {pron.get('us', '')}{' / ' if pron.get('us') and pron.get('uk') else ''}{pron.get('uk', '')}")
         with cols[1]:
             st.write(f"Synonyms: {r.get('synonyms', '')}")
             st.write(f"Antonyms: {r.get('antonyms', '')}")
